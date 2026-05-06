@@ -13,3 +13,14 @@ SPACE = "␣"
 TAB = "↹"
 ESC = "ESC"
 CAPSLOCK = "CAPS"
+
+[appearance]
+font_size = 52
+anchor = "top"
+margin_x = 0
+margin_y = 50
+pos_x_pct = 0.0
+pos_y_pct = 0.0
+max_keys = 2
+custom_css = ""
+

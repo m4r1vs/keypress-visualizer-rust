@@ -12,9 +12,56 @@ use std::time::Duration;
 
 const APP_ID: &str = "io.github.m4r1vs.keypress-visualizer";
 
+fn default_font_size() -> u32 { 24 }
+fn default_anchor() -> String { "bottom".to_string() }
+fn default_margin_x() -> i32 { 0 }
+fn default_margin_y() -> i32 { 50 }
+fn default_pos_x_pct() -> f64 { 0.0 }
+fn default_pos_y_pct() -> f64 { 0.0 }
+fn default_max_keys() -> usize { 10 }
+fn default_custom_css() -> String { String::new() }
+
+#[derive(Deserialize, Debug, Clone)]
+struct AppearanceConfig {
+    #[serde(default = "default_font_size")]
+    font_size: u32,
+    #[serde(default = "default_anchor")]
+    anchor: String,
+    #[serde(default = "default_margin_x")]
+    margin_x: i32,
+    #[serde(default = "default_margin_y")]
+    margin_y: i32,
+    #[serde(default = "default_pos_x_pct")]
+    pos_x_pct: f64,
+    #[serde(default = "default_pos_y_pct")]
+    pos_y_pct: f64,
+    #[serde(default = "default_max_keys")]
+    max_keys: usize,
+    #[serde(default = "default_custom_css")]
+    custom_css: String,
+}
+
+impl Default for AppearanceConfig {
+    fn default() -> Self {
+        Self {
+            font_size: default_font_size(),
+            anchor: default_anchor(),
+            margin_x: default_margin_x(),
+            margin_y: default_margin_y(),
+            pos_x_pct: default_pos_x_pct(),
+            pos_y_pct: default_pos_y_pct(),
+            max_keys: default_max_keys(),
+            custom_css: default_custom_css(),
+        }
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 struct Config {
+    #[serde(default)]
     mappings: HashMap<String, String>,
+    #[serde(default)]
+    appearance: AppearanceConfig,
 }
 
 fn load_config() -> Config {
@@ -26,6 +73,7 @@ fn load_config() -> Config {
         eprintln!("Warning: Error parsing config: {}, using empty mappings.", e);
         Config {
             mappings: HashMap::new(),
+            appearance: AppearanceConfig::default(),
         }
     })
 }
@@ -36,6 +84,44 @@ fn main() {
     app.connect_activate(build_ui);
 
     app.run();
+}
+
+fn map_char_key(key: &str, has_shift: bool) -> Option<&'static str> {
+    match (key, has_shift) {
+        ("1", true) => Some("!"),
+        ("2", true) => Some("@"),
+        ("3", true) => Some("#"),
+        ("4", true) => Some("$"),
+        ("5", true) => Some("%"),
+        ("6", true) => Some("^"),
+        ("7", true) => Some("&"),
+        ("8", true) => Some("*"),
+        ("9", true) => Some("("),
+        ("0", true) => Some(")"),
+        ("MINUS", false) => Some("-"),
+        ("MINUS", true) => Some("_"),
+        ("EQUAL", false) => Some("="),
+        ("EQUAL", true) => Some("+"),
+        ("LEFTBRACE", false) => Some("["),
+        ("LEFTBRACE", true) => Some("{"),
+        ("RIGHTBRACE", false) => Some("]"),
+        ("RIGHTBRACE", true) => Some("}"),
+        ("BACKSLASH", false) => Some("\\"),
+        ("BACKSLASH", true) => Some("|"),
+        ("SEMICOLON", false) => Some(";"),
+        ("SEMICOLON", true) => Some(":"),
+        ("APOSTROPHE", false) => Some("'"),
+        ("APOSTROPHE", true) => Some("\""),
+        ("GRAVE", false) => Some("`"),
+        ("GRAVE", true) => Some("~"),
+        ("COMMA", false) => Some(","),
+        ("COMMA", true) => Some("<"),
+        ("DOT", false) => Some("."),
+        ("DOT", true) => Some(">"),
+        ("SLASH", false) => Some("/"),
+        ("SLASH", true) => Some("?"),
+        _ => None,
+    }
 }
 
 fn build_ui(app: &Application) {
@@ -50,14 +136,46 @@ fn build_ui(app: &Application) {
     window.set_layer(Layer::Overlay);
     window.set_namespace(Some("keypress-visualizer"));
 
-    // Anchors
-    window.set_anchor(gtk4_layer_shell::Edge::Bottom, true);
-    window.set_anchor(gtk4_layer_shell::Edge::Left, false);
-    window.set_anchor(gtk4_layer_shell::Edge::Right, false);
-    window.set_anchor(gtk4_layer_shell::Edge::Top, false);
+    let anchor_str = config.appearance.anchor.to_lowercase();
+    let top = anchor_str.contains("top");
+    let bottom = anchor_str.contains("bottom");
+    let left = anchor_str.contains("left");
+    let right = anchor_str.contains("right");
 
-    // Margin
-    window.set_margin(gtk4_layer_shell::Edge::Bottom, 50);
+    window.set_anchor(gtk4_layer_shell::Edge::Top, top);
+    window.set_anchor(gtk4_layer_shell::Edge::Bottom, bottom);
+    window.set_anchor(gtk4_layer_shell::Edge::Left, left);
+    window.set_anchor(gtk4_layer_shell::Edge::Right, right);
+
+    let mut width = 1920.0;
+    let mut height = 1080.0;
+    if let Some(display) = gtk4::gdk::Display::default() {
+        let monitors = display.monitors();
+        if let Some(monitor) = monitors.item(0).and_downcast::<gtk4::gdk::Monitor>() {
+            let geometry = monitor.geometry();
+            width = geometry.width() as f64;
+            height = geometry.height() as f64;
+        }
+    }
+
+    let mut m_top = config.appearance.margin_y;
+    let m_bottom = config.appearance.margin_y;
+    let mut m_left = config.appearance.margin_x;
+    let m_right = config.appearance.margin_x;
+
+    if config.appearance.pos_x_pct > 0.0 {
+        let px_x = (width * config.appearance.pos_x_pct / 100.0) as i32;
+        m_left += px_x;
+    }
+    if config.appearance.pos_y_pct > 0.0 {
+        let px_y = (height * config.appearance.pos_y_pct / 100.0) as i32;
+        m_top += px_y;
+    }
+
+    if top { window.set_margin(gtk4_layer_shell::Edge::Top, m_top); }
+    if bottom { window.set_margin(gtk4_layer_shell::Edge::Bottom, m_bottom); }
+    if left { window.set_margin(gtk4_layer_shell::Edge::Left, m_left); }
+    if right { window.set_margin(gtk4_layer_shell::Edge::Right, m_right); }
 
     let container = GtkBox::builder()
         .orientation(Orientation::Horizontal)
@@ -69,21 +187,26 @@ fn build_ui(app: &Application) {
 
     // CSS Styling
     let provider = gtk4::CssProvider::new();
-    provider.load_from_data("
-        label {
-            background-color: rgba(30, 30, 30, 0.8);
-            color: white;
-            padding: 5px 15px;
-            border-radius: 8px;
-            font-size: 24px;
-            font-weight: bold;
-            font-family: sans-serif;
-            margin: 5px;
-        }
-        window {
-            background-color: transparent;
-        }
-    ");
+    let css = if config.appearance.custom_css.trim().is_empty() {
+        format!("
+            label {{
+                background-color: rgba(30, 30, 30, 0.8);
+                color: white;
+                padding: 5px 15px;
+                border-radius: 8px;
+                font-size: {}px;
+                font-weight: bold;
+                font-family: sans-serif;
+                margin: 5px;
+            }}
+            window {{
+                background-color: transparent;
+            }}
+        ", config.appearance.font_size)
+    } else {
+        config.appearance.custom_css.clone()
+    };
+    provider.load_from_data(&css);
     
     if let Some(display) = gtk4::gdk::Display::default() {
         gtk4::style_context_add_provider_for_display(
@@ -170,10 +293,20 @@ fn build_ui(app: &Application) {
                     }
 
                     let base_key = mappings.get(&key_name).cloned().unwrap_or(key_name.clone());
+                    let mut mapped_char = None;
+                    if !mappings.contains_key(&key_name) {
+                        if let Some(mapped) = map_char_key(&key_name, has_shift) {
+                            mapped_char = Some(mapped.to_string());
+                        }
+                    }
                     let is_word_key = active_mods.is_empty() && key_name != "SPACE";
 
                     if is_word_key {
-                        let letter = if has_shift { base_key.to_uppercase() } else { base_key.to_lowercase() };
+                        let letter = if let Some(mc) = mapped_char {
+                            mc
+                        } else {
+                            if has_shift { base_key.to_uppercase() } else { base_key.to_lowercase() }
+                        };
                         let mut s = state.borrow_mut();
                         
                         if let Some(label) = s.label.clone() {
@@ -277,7 +410,17 @@ fn build_ui(app: &Application) {
                             let shift_name = if modifiers.contains("LEFTSHIFT") { "LEFTSHIFT" } else { "RIGHTSHIFT" };
                             chord.push(mappings.get(shift_name).cloned().unwrap_or("SHIFT".to_string()));
                         }
-                        chord.push(base_key.to_uppercase());
+                        
+                        let final_key = if !mappings.contains_key(&key_name) {
+                            if let Some(mc) = map_char_key(&key_name, false) {
+                                mc.to_uppercase()
+                            } else {
+                                base_key.to_uppercase()
+                            }
+                        } else {
+                            base_key.to_uppercase()
+                        };
+                        chord.push(final_key);
                         let display_name = chord.join(" + ");
 
                         let label = Label::builder().label(&display_name).build();
@@ -293,6 +436,28 @@ fn build_ui(app: &Application) {
             } else if value == 0 { // Release
                 if is_modifier {
                     modifiers.remove(&key_name);
+                }
+            }
+
+            // Enforce max keys limit
+            if config.appearance.max_keys > 0 {
+                let mut count: usize = 0;
+                let mut child = container_clone.first_child();
+                while let Some(c) = child.clone() {
+                    count += 1;
+                    child = c.next_sibling();
+                }
+                let mut to_remove = count.saturating_sub(config.appearance.max_keys);
+                let mut child = container_clone.first_child();
+                while to_remove > 0 {
+                    if let Some(c) = child {
+                        let next = c.next_sibling();
+                        container_clone.remove(&c);
+                        child = next;
+                        to_remove -= 1;
+                    } else {
+                        break;
+                    }
                 }
             }
         }
