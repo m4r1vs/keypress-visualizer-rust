@@ -25,11 +25,13 @@
         rustc = pkgs.rust-bin.stable.latest.default;
       };
       runtimeDeps = with pkgs; [
-        # TODO: add packages
+        gtk4
+        gtk4-layer-shell
+        glib
       ];
     in {
       default = rustPlatform.buildRustPackage {
-        pname = "hyprland-which-key";
+        pname = "keypress-visualizer-rust";
         version = "0.1.0";
         src = ./.;
 
@@ -45,7 +47,7 @@
         buildInputs = runtimeDeps;
 
         postInstall = ''
-          wrapProgram $out/bin/hyprland-which-key \
+          wrapProgram $out/bin/keypress-visualizer-rust \
             --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeDeps}"
         '';
 
@@ -54,7 +56,7 @@
           homepage = "https://github.com/m4r1vs/keypress-visualiser-rust";
           license = licenses.mit;
           platforms = platforms.linux;
-          mainProgram = "keypress-visualiser-rust";
+          mainProgram = "keypress-visualizer-rust";
         };
       };
     });
@@ -65,8 +67,15 @@
         overlays = [(import rust-overlay)];
       };
       runtimeDeps = with pkgs; [
-        # TODO: add runtime packages
+        gtk4
+        gtk4-layer-shell
+        glib
       ];
+      runScript = pkgs.writeShellScriptBin "dev" ''
+        cargo build
+        sudo setcap 'cap_dac_override,cap_sys_ptrace+ep' ./target/debug/keypress-visualizer-rust
+        ./target/debug/keypress-visualizer-rust
+      '';
     in {
       default = pkgs.mkShell {
         buildInputs = with pkgs;
@@ -75,6 +84,7 @@
               extensions = ["rust-src"];
             })
             pkg-config
+            runScript
           ]
           ++ runtimeDeps;
 
