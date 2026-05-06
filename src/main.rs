@@ -4,8 +4,10 @@ use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, Box as GtkBox, Label, Orientation};
 use gtk4_layer_shell::{Layer, LayerShell};
 use serde::Deserialize;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
+use std::rc::Rc;
 use std::time::Duration;
 
 const APP_ID: &str = "io.github.m4r1vs.keypress-visualizer";
@@ -104,6 +106,21 @@ fn build_ui(app: &Application) {
         eprintln!("No keyboard device found matching the pattern!");
     }
 
+    // State for word detection
+    struct WordState {
+        label: Option<Label>,
+        text: String,
+        timeout_id: Option<glib::SourceId>,
+        pending_space: bool,
+    }
+
+    let state = Rc::new(RefCell::new(WordState {
+        label: None,
+        text: String::new(),
+        timeout_id: None,
+        pending_space: false,
+    }));
+
     // Poll channel and update UI
     let container_clone = container.clone();
     let mappings = config.mappings;
@@ -119,6 +136,25 @@ fn build_ui(app: &Application) {
             if value == 1 { // Press
                 if is_modifier {
                     modifiers.insert(key_name.clone());
+                    
+                    // Non-shift modifiers separate words
+                    if key_name != "LEFTSHIFT" && key_name != "RIGHTSHIFT" {
+                        let mut s = state.borrow_mut();
+                        if s.pending_space {
+                            let spc_name = mappings.get("SPACE").cloned().unwrap_or("SPC".to_string());
+                            let spc_label = Label::builder().label(&spc_name).build();
+                            container_clone.append(&spc_label);
+                            let sc = spc_label.clone();
+                            let cc = container_clone.clone();
+                            glib::timeout_add_local_once(Duration::from_secs(2), move || {
+                                cc.remove(&sc);
+                            });
+                        }
+                        s.label = None;
+                        s.text.clear();
+                        s.timeout_id = None;
+                        s.pending_space = false;
+                    }
                 } else {
                     let has_shift = modifiers.contains("LEFTSHIFT") || modifiers.contains("RIGHTSHIFT");
                     let mut active_mods = Vec::new();
@@ -133,34 +169,126 @@ fn build_ui(app: &Application) {
                         }
                     }
 
-                    let base_key = mappings.get(&key_name).cloned().unwrap_or(key_name);
-                    
-                    let display_name = if active_mods.is_empty() {
-                        if has_shift {
-                            base_key.to_uppercase()
+                    let base_key = mappings.get(&key_name).cloned().unwrap_or(key_name.clone());
+                    let is_word_key = active_mods.is_empty() && key_name != "SPACE";
+
+                    if is_word_key {
+                        let letter = if has_shift { base_key.to_uppercase() } else { base_key.to_lowercase() };
+                        let mut s = state.borrow_mut();
+                        
+                        if let Some(label) = s.label.clone() {
+                            if s.pending_space {
+                                s.text.push_str(" ");
+                                s.pending_space = false;
+                            }
+                            s.text.push_str(&letter);
+                            label.set_label(&s.text);
+                            if let Some(id) = s.timeout_id.take() {
+                                id.remove();
+                            }
                         } else {
-                            base_key.to_lowercase()
+                            s.text = letter;
+                            let label = Label::builder().label(&s.text).build();
+                            container_clone.append(&label);
+                            s.label = Some(label);
+                            s.pending_space = false;
+                        }
+
+                        let state_for_timer = state.clone();
+                        let label_clone = s.label.as_ref().unwrap().clone();
+                        let container_clone_inner = container_clone.clone();
+                        let id = glib::timeout_add_local_once(Duration::from_secs(2), move || {
+                            container_clone_inner.remove(&label_clone);
+                            let mut s = state_for_timer.borrow_mut();
+                            if s.label.as_ref() == Some(&label_clone) {
+                                s.label = None;
+                                s.text.clear();
+                                s.timeout_id = None;
+                                s.pending_space = false;
+                            }
+                        });
+                        s.timeout_id = Some(id);
+                    } else if key_name == "SPACE" {
+                        let mut s = state.borrow_mut();
+                        if s.label.is_some() {
+                            if s.pending_space {
+                                // Second space, emit the first one explicitly
+                                let spc_name = mappings.get("SPACE").cloned().unwrap_or("SPC".to_string());
+                                let spc_label = Label::builder().label(&spc_name).build();
+                                container_clone.append(&spc_label);
+                                let sc = spc_label.clone();
+                                let cc = container_clone.clone();
+                                glib::timeout_add_local_once(Duration::from_secs(2), move || {
+                                    cc.remove(&sc);
+                                });
+                            }
+                            s.pending_space = true;
+                            // Reset word timeout
+                            if let Some(id) = s.timeout_id.take() {
+                                id.remove();
+                            }
+                            let state_for_timer = state.clone();
+                            let label_clone = s.label.as_ref().unwrap().clone();
+                            let container_clone_inner = container_clone.clone();
+                            let id = glib::timeout_add_local_once(Duration::from_secs(2), move || {
+                                container_clone_inner.remove(&label_clone);
+                                let mut s = state_for_timer.borrow_mut();
+                                if s.label.as_ref() == Some(&label_clone) {
+                                    s.label = None;
+                                    s.text.clear();
+                                    s.timeout_id = None;
+                                    s.pending_space = false;
+                                }
+                            });
+                            s.timeout_id = Some(id);
+                        } else {
+                            // No word, just show SPC
+                            let spc_name = mappings.get("SPACE").cloned().unwrap_or("SPC".to_string());
+                            let spc_label = Label::builder().label(&spc_name).build();
+                            container_clone.append(&spc_label);
+                            let sc = spc_label.clone();
+                            let cc = container_clone.clone();
+                            glib::timeout_add_local_once(Duration::from_secs(2), move || {
+                                cc.remove(&sc);
+                            });
                         }
                     } else {
-                        // Complex chord: Show mods, show Shift if present, all keys uppercase
+                        // Chord
+                        {
+                            let mut s = state.borrow_mut();
+                            if s.pending_space {
+                                let spc_name = mappings.get("SPACE").cloned().unwrap_or("SPC".to_string());
+                                let spc_label = Label::builder().label(&spc_name).build();
+                                container_clone.append(&spc_label);
+                                let sc = spc_label.clone();
+                                let cc = container_clone.clone();
+                                glib::timeout_add_local_once(Duration::from_secs(2), move || {
+                                    cc.remove(&sc);
+                                });
+                            }
+                            s.label = None;
+                            s.text.clear();
+                            s.timeout_id = None;
+                            s.pending_space = false;
+                        }
+
                         let mut chord = active_mods;
                         if has_shift {
                             let shift_name = if modifiers.contains("LEFTSHIFT") { "LEFTSHIFT" } else { "RIGHTSHIFT" };
                             chord.push(mappings.get(shift_name).cloned().unwrap_or("SHIFT".to_string()));
                         }
                         chord.push(base_key.to_uppercase());
-                        chord.join(" + ")
-                    };
+                        let display_name = chord.join(" + ");
 
-                    let label = Label::builder().label(&display_name).build();
+                        let label = Label::builder().label(&display_name).build();
+                        container_clone.append(&label);
 
-                    container_clone.append(&label);
-
-                    let label_clone = label.clone();
-                    let container_clone_inner = container_clone.clone();
-                    glib::timeout_add_local_once(Duration::from_secs(2), move || {
-                        container_clone_inner.remove(&label_clone);
-                    });
+                        let label_clone = label.clone();
+                        let container_clone_inner = container_clone.clone();
+                        glib::timeout_add_local_once(Duration::from_secs(2), move || {
+                            container_clone_inner.remove(&label_clone);
+                        });
+                    }
                 }
             } else if value == 0 { // Release
                 if is_modifier {
