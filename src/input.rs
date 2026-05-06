@@ -22,7 +22,10 @@ pub fn spawn_input_thread(device_path: String, tx: Sender<(String, i32)>) {
     });
 }
 
-fn run_input_loop(device_path: String, tx: Sender<(String, i32)>) -> Result<(), Box<dyn std::error::Error>> {
+fn run_input_loop(
+    device_path: String,
+    tx: Sender<(String, i32)>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut device = Device::open(&device_path)?;
     println!("Opened device: {}", device_path);
 
