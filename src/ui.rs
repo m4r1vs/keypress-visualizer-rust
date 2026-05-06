@@ -121,7 +121,7 @@ fn start_input_thread(tx: std::sync::mpsc::Sender<(String, i32)>) {
 struct WordState {
     label: Option<Label>,
     text: String,
-    timeout_id: Option<glib::SourceId>,
+    generation: u64,
 }
 
 struct SpamState {
@@ -130,8 +130,8 @@ struct SpamState {
     count: usize,
     label: Option<Label>,
     first_press_time: Instant,
-    timeout_id: Option<glib::SourceId>,
     repeat_ticks: usize,
+    generation: u64,
 }
 
 struct AppState {
@@ -140,6 +140,7 @@ struct AppState {
     modifiers: HashSet<String>,
     word_state: WordState,
     spam_state: Option<SpamState>,
+    next_generation: u64,
 }
 
 impl AppState {
@@ -151,10 +152,16 @@ impl AppState {
             word_state: WordState {
                 label: None,
                 text: String::new(),
-                timeout_id: None,
+                generation: 0,
             },
             spam_state: None,
+            next_generation: 0,
         }
+    }
+
+    fn next_gen(&mut self) -> u64 {
+        self.next_generation += 1;
+        self.next_generation
     }
 }
 
@@ -287,37 +294,34 @@ fn process_key_event(state_ref: Rc<RefCell<AppState>>, key_name: String, value: 
             if key_name != "LEFTSHIFT" && key_name != "RIGHTSHIFT" {
                 state.word_state.label = None;
                 state.word_state.text.clear();
-                if let Some(id) = state.word_state.timeout_id.take() {
-                    id.remove();
-                }
+                state.word_state.generation = state.next_gen();
             }
         } else {
             if let Some(ref mut spam) = state.spam_state {
                 if spam.key_name == key_name {
                     spam.count += 1;
                 } else {
-                    if let Some(id) = spam.timeout_id.take() {
-                        id.remove();
-                    }
+                    let next_gen = state.next_gen();
                     state.spam_state = Some(SpamState {
                         key_name: key_name.clone(),
                         display_name: display_name.clone(),
                         count: 1,
                         label: None,
                         first_press_time: Instant::now(),
-                        timeout_id: None,
                         repeat_ticks: 0,
+                        generation: next_gen,
                     });
                 }
             } else {
+                let next_gen = state.next_gen();
                 state.spam_state = Some(SpamState {
                     key_name: key_name.clone(),
                     display_name: display_name.clone(),
                     count: 1,
                     label: None,
                     first_press_time: Instant::now(),
-                    timeout_id: None,
                     repeat_ticks: 0,
+                    generation: next_gen,
                 });
             }
             should_process_press = true;
@@ -393,7 +397,7 @@ fn handle_keypress_ui(
 fn handle_spam_ui(
     state_ref: Rc<RefCell<AppState>>,
     state: &mut std::cell::RefMut<AppState>,
-    key_name: String,
+    _key_name: String,
     _display_name: String,
     is_word_key: bool,
     value: i32,
@@ -416,9 +420,7 @@ fn handle_spam_ui(
                             state.container.remove(&lbl);
                         }
                     }
-                    if let Some(id) = state.word_state.timeout_id.take() {
-                        id.remove();
-                    }
+                    state.word_state.generation = state.next_gen();
                 } else if let Some(lbl) = &state.word_state.label {
                     lbl.set_label(&state.word_state.text);
                 }
@@ -467,27 +469,26 @@ fn handle_spam_ui(
     }
 
     let container_clone = state.container.clone();
-    let spam = state.spam_state.as_mut().unwrap();
-    if let Some(id) = spam.timeout_id.take() {
-        id.remove();
-    }
+    let (generation, spam_label) = {
+        let next_gen = state.next_gen();
+        let spam = state.spam_state.as_mut().unwrap();
+        spam.generation = next_gen;
+        (spam.generation, spam.label.clone())
+    };
 
-    if let Some(lbl) = &spam.label {
+    if let Some(lbl) = spam_label {
         let label_clone = lbl.clone();
-        let id = glib::timeout_add_local_once(Duration::from_secs(2), move || {
+        glib::timeout_add_local_once(Duration::from_secs(2), move || {
             if label_clone.parent().is_some() {
                 container_clone.remove(&label_clone);
             }
             let mut s = state_ref.borrow_mut();
             if let Some(ref mut spam_inner) = s.spam_state {
-                if spam_inner.key_name == key_name
-                    && spam_inner.label.as_ref() == Some(&label_clone)
-                {
+                if spam_inner.generation == generation {
                     spam_inner.label = None;
                 }
             }
         });
-        spam.timeout_id = Some(id);
     }
 }
 
@@ -502,9 +503,7 @@ fn handle_regular_ui(
         if let Some(label) = state.word_state.label.clone() {
             state.word_state.text.push_str(&display_name);
             label.set_label(&state.word_state.text);
-            if let Some(id) = state.word_state.timeout_id.take() {
-                id.remove();
-            }
+            state.word_state.generation = state.next_gen();
         } else {
             state.word_state.text = display_name.clone();
             let label = Label::builder().label(&state.word_state.text).build();
@@ -514,25 +513,22 @@ fn handle_regular_ui(
 
         let label_clone = state.word_state.label.as_ref().unwrap().clone();
         let container_clone = state.container.clone();
-        let id = glib::timeout_add_local_once(Duration::from_secs(2), move || {
+        let generation = state.word_state.generation;
+        glib::timeout_add_local_once(Duration::from_secs(2), move || {
             if label_clone.parent().is_some() {
                 container_clone.remove(&label_clone);
             }
             let mut s = state_ref.borrow_mut();
-            if s.word_state.label.as_ref() == Some(&label_clone) {
+            if s.word_state.generation == generation {
                 s.word_state.label = None;
                 s.word_state.text.clear();
-                s.word_state.timeout_id = None;
             }
         });
-        state.word_state.timeout_id = Some(id);
     } else if key_name == "SPACE" || key_name == "BACKSPACE" {
         if state.word_state.label.is_some() {
             state.word_state.label = None;
             state.word_state.text.clear();
-            if let Some(id) = state.word_state.timeout_id.take() {
-                id.remove();
-            }
+            state.word_state.generation = state.next_gen();
         } else {
             let label = Label::builder().label(&display_name).build();
             state.container.append(&label);
@@ -548,9 +544,7 @@ fn handle_regular_ui(
         // Chord
         state.word_state.label = None;
         state.word_state.text.clear();
-        if let Some(id) = state.word_state.timeout_id.take() {
-            id.remove();
-        }
+        state.word_state.generation = state.next_gen();
 
         let label = Label::builder().label(&display_name).build();
         state.container.append(&label);
@@ -588,17 +582,18 @@ fn enforce_max_keys(state: &mut std::cell::RefMut<AppState>) {
                 if state.word_state.label.as_ref() == Some(&lbl) {
                     state.word_state.label = None;
                     state.word_state.text.clear();
-                    if let Some(id) = state.word_state.timeout_id.take() {
-                        id.remove();
-                    }
+                    state.word_state.generation = state.next_gen();
                 }
+                let mut spam_needs_gen = false;
                 if let Some(ref mut spam) = state.spam_state {
                     if spam.label.as_ref() == Some(&lbl) {
                         spam.label = None;
-                        if let Some(id) = spam.timeout_id.take() {
-                            id.remove();
-                        }
+                        spam_needs_gen = true;
                     }
+                }
+                if spam_needs_gen {
+                    let next_gen = state.next_gen();
+                    state.spam_state.as_mut().unwrap().generation = next_gen;
                 }
             }
 
