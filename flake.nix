@@ -1,0 +1,87 @@
+{
+  description = "Linux keypress overlay dev flake";
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-25.05";
+    rust-overlay.url = "github:oxalica/rust-overlay";
+  };
+  outputs = {
+    nixpkgs,
+    rust-overlay,
+    ...
+  }: let
+    supportedSystems = [
+      "x86_64-linux"
+      "aarch64-linux"
+    ];
+    forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+  in {
+    packages = forAllSystems (system: let
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [(import rust-overlay)];
+      };
+      rustPlatform = pkgs.makeRustPlatform {
+        cargo = pkgs.rust-bin.stable.latest.default;
+        rustc = pkgs.rust-bin.stable.latest.default;
+      };
+      runtimeDeps = with pkgs; [
+        # TODO: add packages
+      ];
+    in {
+      default = rustPlatform.buildRustPackage {
+        pname = "hyprland-which-key";
+        version = "0.1.0";
+        src = ./.;
+
+        cargoLock = {
+          lockFile = ./Cargo.lock;
+        };
+
+        nativeBuildInputs = with pkgs; [
+          pkg-config
+          makeWrapper
+        ];
+
+        buildInputs = runtimeDeps;
+
+        postInstall = ''
+          wrapProgram $out/bin/hyprland-which-key \
+            --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeDeps}"
+        '';
+
+        meta = with pkgs.lib; {
+          description = "A simple program to show keypresses";
+          homepage = "https://github.com/m4r1vs/keypress-visualiser-rust";
+          license = licenses.mit;
+          platforms = platforms.linux;
+          mainProgram = "keypress-visualiser-rust";
+        };
+      };
+    });
+
+    devShells = forAllSystems (system: let
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [(import rust-overlay)];
+      };
+      runtimeDeps = with pkgs; [
+        # TODO: add runtime packages
+      ];
+    in {
+      default = pkgs.mkShell {
+        buildInputs = with pkgs;
+          [
+            (rust-bin.stable.latest.default.override {
+              extensions = ["rust-src"];
+            })
+            pkg-config
+          ]
+          ++ runtimeDeps;
+
+        shellHook = ''
+          export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeDeps}:$LD_LIBRARY_PATH"
+        '';
+      };
+    });
+  };
+}
