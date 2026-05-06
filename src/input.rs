@@ -30,8 +30,6 @@ fn run_input_loop(device_path: String, tx: Sender<(String, i32)>) -> Result<(), 
         for event in device.fetch_events()? {
             if let evdev::EventSummary::Key(_, key, value) = event.destructure() {
                 // value: 0 = Release, 1 = Press, 2 = Repeat
-                if value == 2 { continue; } // Ignore repeats for now
-                
                 let key_name = format!("{:?}", key);
                 let clean_name = key_name.trim_start_matches("KEY_").to_string();
                 if tx.send((clean_name, value)).is_err() {

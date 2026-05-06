@@ -21,6 +21,8 @@ margin_x = 0
 margin_y = 50
 pos_x_pct = 0.0
 pos_y_pct = 0.0
-max_keys = 2
+max_keys = 1
 custom_css = ""
+spam_threshold = 4
+spam_hold_ms = 500
 
