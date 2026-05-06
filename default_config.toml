@@ -22,7 +22,7 @@ margin_y = 50
 pos_x_pct = 0.0
 pos_y_pct = 0.0
 max_keys = 1
-custom_css = ""
+custom_css = "default_style.css"
 spam_threshold = 4
 spam_hold_ms = 500
 

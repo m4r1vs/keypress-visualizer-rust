@@ -12,7 +12,7 @@ pub struct AppearanceConfig {
     pub pos_x_pct: f64,
     pub pos_y_pct: f64,
     pub max_keys: usize,
-    pub custom_css: String,
+    pub custom_css: std::path::PathBuf,
     pub spam_threshold: usize,
     pub spam_hold_ms: u64,
 }
@@ -27,7 +27,7 @@ impl Default for AppearanceConfig {
             pos_x_pct: 0.0,
             pos_y_pct: 0.0,
             max_keys: 10,
-            custom_css: String::new(),
+            custom_css: std::path::PathBuf::from("default_style.css"),
             spam_threshold: 4,
             spam_hold_ms: 500,
         }

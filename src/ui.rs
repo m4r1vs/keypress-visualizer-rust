@@ -90,35 +90,15 @@ fn setup_layer_shell(window: &ApplicationWindow, appearance: &AppearanceConfig) 
     }
 }
 
-pub(crate) fn generate_default_css(appearance: &AppearanceConfig) -> String {
-    if appearance.custom_css.trim().is_empty() {
-        format!(
-            "\
-            label {{
-                background-color: rgba(30, 30, 30, 0.8);
-                color: white;
-                padding: 5px 15px;
-                border-radius: 8px;
-                font-size: {}px;
-                font-weight: bold;
-                font-family: sans-serif;
-                margin: 5px;
-            }}
-            window {{
-                background-color: transparent;
-            }}
-        ",
-            appearance.font_size
-        )
-    } else {
-        appearance.custom_css.clone()
-    }
-}
-
 fn setup_css(appearance: &AppearanceConfig) {
     let provider = gtk4::CssProvider::new();
-    let css = generate_default_css(appearance);
-    provider.load_from_data(&css);
+    let css_path = &appearance.custom_css;
+    match std::fs::read_to_string(css_path) {
+        Ok(css) => provider.load_from_data(&css),
+        Err(e) => {
+            eprintln!("Warning: Failed to load CSS from {}: {}", css_path.display(), e);
+        }
+    }
 
     if let Some(display) = gtk4::gdk::Display::default() {
         gtk4::style_context_add_provider_for_display(
