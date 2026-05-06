@@ -3,9 +3,30 @@ mod input;
 use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, Box as GtkBox, Label, Orientation};
 use gtk4_layer_shell::{Layer, LayerShell};
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::fs;
 use std::time::Duration;
 
 const APP_ID: &str = "io.github.m4r1vs.keypress-visualizer";
+
+#[derive(Deserialize, Debug, Clone)]
+struct Config {
+    mappings: HashMap<String, String>,
+}
+
+fn load_config() -> Config {
+    let config_str = fs::read_to_string("default_config.toml").unwrap_or_else(|_| {
+        eprintln!("Warning: Could not read default_config.toml, using empty mappings.");
+        "[mappings]".to_string()
+    });
+    toml::from_str(&config_str).unwrap_or_else(|e| {
+        eprintln!("Warning: Error parsing config: {}, using empty mappings.", e);
+        Config {
+            mappings: HashMap::new(),
+        }
+    })
+}
 
 fn main() {
     let app = Application::builder().application_id(APP_ID).build();
@@ -16,6 +37,7 @@ fn main() {
 }
 
 fn build_ui(app: &Application) {
+    let config = load_config();
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Keypress Visualizer")
@@ -84,14 +106,14 @@ fn build_ui(app: &Application) {
 
     // Poll channel and update UI
     let container_clone = container.clone();
+    let mappings = config.mappings;
     glib::timeout_add_local(Duration::from_millis(10), move || {
         while let Ok(key_name) = rx.try_recv() {
-            let label = Label::builder()
-                .label(&key_name)
-                .build();
-            
+            let display_name = mappings.get(&key_name).cloned().unwrap_or(key_name);
+            let label = Label::builder().label(&display_name).build();
+
             container_clone.append(&label);
-            
+
             let label_clone = label.clone();
             let container_clone_inner = container_clone.clone();
             glib::timeout_add_local_once(Duration::from_secs(2), move || {
