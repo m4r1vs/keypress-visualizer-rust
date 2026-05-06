@@ -94,7 +94,7 @@ fn build_ui(app: &Application) {
     window.present();
 
     // Communication channel
-    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    let (tx, rx) = std::sync::mpsc::channel::<(String, i32)>();
 
     // Find keyboard and start input thread
     if let Some(device_path) = input::find_keyboard_device() {
@@ -107,18 +107,66 @@ fn build_ui(app: &Application) {
     // Poll channel and update UI
     let container_clone = container.clone();
     let mappings = config.mappings;
+    let mut modifiers = std::collections::HashSet::<String>::new();
+
     glib::timeout_add_local(Duration::from_millis(10), move || {
-        while let Ok(key_name) = rx.try_recv() {
-            let display_name = mappings.get(&key_name).cloned().unwrap_or(key_name);
-            let label = Label::builder().label(&display_name).build();
+        while let Ok((key_name, value)) = rx.try_recv() {
+            let is_modifier = matches!(
+                key_name.as_str(),
+                "LEFTCTRL" | "RIGHTCTRL" | "LEFTSHIFT" | "RIGHTSHIFT" | "LEFTALT" | "RIGHTALT" | "LEFTMETA" | "RIGHTMETA"
+            );
 
-            container_clone.append(&label);
+            if value == 1 { // Press
+                if is_modifier {
+                    modifiers.insert(key_name.clone());
+                } else {
+                    let has_shift = modifiers.contains("LEFTSHIFT") || modifiers.contains("RIGHTSHIFT");
+                    let mut active_mods = Vec::new();
+                    for m in &["CTRL", "ALT", "META"] {
+                        if modifiers.contains(&format!("LEFT{}", m)) || modifiers.contains(&format!("RIGHT{}", m)) {
+                            let mod_name = if modifiers.contains(&format!("LEFT{}", m)) {
+                                format!("LEFT{}", m)
+                            } else {
+                                format!("RIGHT{}", m)
+                            };
+                            active_mods.push(mappings.get(&mod_name).cloned().unwrap_or(mod_name));
+                        }
+                    }
 
-            let label_clone = label.clone();
-            let container_clone_inner = container_clone.clone();
-            glib::timeout_add_local_once(Duration::from_secs(2), move || {
-                container_clone_inner.remove(&label_clone);
-            });
+                    let base_key = mappings.get(&key_name).cloned().unwrap_or(key_name);
+                    
+                    let display_name = if active_mods.is_empty() {
+                        if has_shift {
+                            base_key.to_uppercase()
+                        } else {
+                            base_key.to_lowercase()
+                        }
+                    } else {
+                        // Complex chord: Show mods, show Shift if present, all keys uppercase
+                        let mut chord = active_mods;
+                        if has_shift {
+                            let shift_name = if modifiers.contains("LEFTSHIFT") { "LEFTSHIFT" } else { "RIGHTSHIFT" };
+                            chord.push(mappings.get(shift_name).cloned().unwrap_or("SHIFT".to_string()));
+                        }
+                        chord.push(base_key.to_uppercase());
+                        chord.join(" + ")
+                    };
+
+                    let label = Label::builder().label(&display_name).build();
+
+                    container_clone.append(&label);
+
+                    let label_clone = label.clone();
+                    let container_clone_inner = container_clone.clone();
+                    glib::timeout_add_local_once(Duration::from_secs(2), move || {
+                        container_clone_inner.remove(&label_clone);
+                    });
+                }
+            } else if value == 0 { // Release
+                if is_modifier {
+                    modifiers.remove(&key_name);
+                }
+            }
         }
         glib::ControlFlow::Continue
     });

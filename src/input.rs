@@ -14,7 +14,7 @@ pub fn find_keyboard_device() -> Option<String> {
     None
 }
 
-pub fn spawn_input_thread(device_path: String, tx: Sender<String>) {
+pub fn spawn_input_thread(device_path: String, tx: Sender<(String, i32)>) {
     std::thread::spawn(move || {
         if let Err(e) = run_input_loop(device_path, tx) {
             eprintln!("Error in input loop: {}", e);
@@ -22,16 +22,19 @@ pub fn spawn_input_thread(device_path: String, tx: Sender<String>) {
     });
 }
 
-fn run_input_loop(device_path: String, tx: Sender<String>) -> Result<(), Box<dyn std::error::Error>> {
+fn run_input_loop(device_path: String, tx: Sender<(String, i32)>) -> Result<(), Box<dyn std::error::Error>> {
     let mut device = Device::open(&device_path)?;
     println!("Opened device: {}", device_path);
 
     loop {
         for event in device.fetch_events()? {
-            if let evdev::EventSummary::Key(_, key, 1) = event.destructure() {
+            if let evdev::EventSummary::Key(_, key, value) = event.destructure() {
+                // value: 0 = Release, 1 = Press, 2 = Repeat
+                if value == 2 { continue; } // Ignore repeats for now
+                
                 let key_name = format!("{:?}", key);
                 let clean_name = key_name.trim_start_matches("KEY_").to_string();
-                if tx.send(clean_name).is_err() {
+                if tx.send((clean_name, value)).is_err() {
                     return Ok(()); // Main thread closed
                 }
             }
