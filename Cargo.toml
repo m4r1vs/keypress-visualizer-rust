@@ -12,3 +12,4 @@ glob = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 ksni = { version = "0.3", features = ["blocking"] }
+libc = "0.2"
