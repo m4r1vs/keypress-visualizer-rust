@@ -49,11 +49,29 @@ pub struct Config {
 }
 
 pub fn load_config() -> Config {
-    let config_str = fs::read_to_string("default_config.toml").unwrap_or_else(|_| {
-        eprintln!("Warning: Could not read default_config.toml, using empty mappings.");
+    let mut config_path = std::path::PathBuf::from("default_config.toml");
+
+    if !config_path.exists() {
+        if let Ok(env_path) = std::env::var("KEYPRESS_VISUALIZER_CONFIG") {
+            config_path = std::path::PathBuf::from(env_path);
+        }
+    }
+
+    if !config_path.exists() {
+        let etc_path = std::path::PathBuf::from("/etc/keypress-visualizer-rust/default_config.toml");
+        if etc_path.exists() {
+            config_path = etc_path;
+        }
+    }
+
+    let config_str = fs::read_to_string(&config_path).unwrap_or_else(|_| {
+        eprintln!(
+            "Warning: Could not read {:?}, using empty mappings.",
+            config_path
+        );
         "[mappings]".to_string()
     });
-    toml::from_str(&config_str).unwrap_or_else(|e| {
+    let mut config: Config = toml::from_str(&config_str).unwrap_or_else(|e| {
         eprintln!(
             "Warning: Error parsing config: {}, using empty mappings.",
             e
@@ -63,5 +81,19 @@ pub fn load_config() -> Config {
             mappings: HashMap::new(),
             appearance: AppearanceConfig::default(),
         }
-    })
+    });
+
+    // If custom_css is default and doesn't exist in CWD, try relative to config
+    if config.appearance.custom_css == std::path::PathBuf::from("default_style.css")
+        && !config.appearance.custom_css.exists()
+    {
+        if let Some(parent) = config_path.parent() {
+            let css_relative = parent.join("default_style.css");
+            if css_relative.exists() {
+                config.appearance.custom_css = css_relative;
+            }
+        }
+    }
+
+    config
 }

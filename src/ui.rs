@@ -103,7 +103,12 @@ fn setup_css(appearance: &AppearanceConfig) {
     match std::fs::read_to_string(css_path) {
         Ok(css) => provider.load_from_data(&css),
         Err(e) => {
-            eprintln!("Warning: Failed to load CSS from {}: {}", css_path.display(), e);
+            eprintln!(
+                "Warning: Failed to load CSS from {}: {}. Using default fallback.",
+                css_path.display(),
+                e
+            );
+            provider.load_from_data(&generate_default_css(appearance));
         }
     }
 
@@ -114,6 +119,28 @@ fn setup_css(appearance: &AppearanceConfig) {
             gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
     }
+}
+
+fn generate_default_css(appearance: &AppearanceConfig) -> String {
+    format!(
+        "label {{
+            background-color: rgba(21, 19, 15, 0.7);
+            color: #fff0d6;
+            padding: 5px 15px;
+            border-radius: 6px;
+            font-size: {}px;
+            font-weight: bold;
+            font-family: sans-serif;
+            margin: 23px;
+            box-shadow:
+                0 2px 18px rgba(0, 0, 0, 0.26),
+                0 3px 20px rgba(0, 0, 0, 0.2);
+        }}
+        window {{
+            background-color: transparent;
+        }}",
+        appearance.font_size
+    )
 }
 
 fn start_input_thread(tx: std::sync::mpsc::Sender<(String, i32)>) {

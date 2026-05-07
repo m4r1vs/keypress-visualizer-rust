@@ -28,6 +28,7 @@
         gtk4
         gtk4-layer-shell
         glib
+        adwaita-icon-theme
       ];
     in {
       default = rustPlatform.buildRustPackage {
@@ -47,8 +48,13 @@
         buildInputs = runtimeDeps;
 
         postInstall = ''
+          mkdir -p $out/share/keypress-visualizer-rust
+          cp default_config.toml default_style.css $out/share/keypress-visualizer-rust/
+
           wrapProgram $out/bin/keypress-visualizer-rust \
-            --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeDeps}"
+            --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeDeps}" \
+            --prefix XDG_DATA_DIRS : "$GSETTINGS_SCHEMAS_PATH" \
+            --set KEYPRESS_VISUALIZER_CONFIG "$out/share/keypress-visualizer-rust/default_config.toml"
         '';
 
         meta = with pkgs.lib; {
