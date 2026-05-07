@@ -18,14 +18,11 @@ A simple Linux utility that displays keypresses in a floating overlay window. Bu
 
 ## Configuration
 
-The application uses a `default_config.toml` file to map raw key names (e.g., `LEFTMETA`) to display strings (e.g., `LCMD`).
+The application uses a TOML configuration file to map raw key names (e.g., `LEFTMETA`) to display strings (e.g., `LCMD`).
 
-Example `default_config.toml`:
-```toml
-[mappings]
-LEFTMETA = "LCMD"
-SPACE = "SPC"
-```
+On NixOS, the preferred way to configure the application is through the NixOS module's `settings` option (see the **NixOS Module** section below), which automatically generates `/etc/keypress-visualizer-rust/default_config.toml`.
+
+For other systems, it looks for `default_config.toml` in the current working directory or via the `KEYPRESS_VISUALIZER_CONFIG` environment variable.
 
 ## Getting Started
 
@@ -61,6 +58,28 @@ Manual build:
 ```bash
 cargo build
 ```
+
+## NixOS Module
+
+This flake provides a NixOS module that simplifies installation and handles permissions automatically.
+
+To use it, add the flake to your inputs and enable the module:
+
+```nix
+{
+  programs.keypress-visualizer.enable = true;
+  # Optional: custom settings
+  programs.keypress-visualizer.settings = {
+    appearance.font_size = 30;
+  };
+}
+```
+
+The module automatically sets up a security wrapper with `cap_dac_override` and `cap_sys_ptrace` so the program can read `/dev/input` without root or special group memberships.
+
+## Desktop Integration
+
+A `.desktop` file is included and installed to `share/applications`. On NixOS, enabling the module will add "Keypress Visualizer" to your application menu.
 
 ## Development Conventions
 

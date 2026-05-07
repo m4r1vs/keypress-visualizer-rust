@@ -5,6 +5,7 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
   outputs = {
+    self,
     nixpkgs,
     rust-overlay,
     ...
@@ -15,6 +16,54 @@
     ];
     forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
   in {
+    nixosModules.default = {
+      config,
+      lib,
+      pkgs,
+      ...
+    }: let
+      cfg = config.programs.keypress-visualizer;
+    in {
+      options.programs.keypress-visualizer = {
+        enable = lib.mkEnableOption "Keypress Visualizer";
+        package = lib.mkOption {
+          type = lib.types.package;
+          default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+          description = "The keypress-visualizer package to use.";
+        };
+        useWrapper = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = ''
+            Whether to use a security wrapper with necessary capabilities.
+            This allows the program to read input devices without being root or in the input group.
+          '';
+        };
+        settings = lib.mkOption {
+          type = lib.types.submodule {
+            freeformType = (pkgs.formats.toml {}).type;
+          };
+          default = {};
+          description = "Configuration for keypress-visualizer-rust.";
+        };
+      };
+
+      config = lib.mkIf cfg.enable {
+        environment.systemPackages = [cfg.package];
+
+        environment.etc."keypress-visualizer-rust/default_config.toml" = lib.mkIf (cfg.settings != {}) {
+          source = (pkgs.formats.toml {}).generate "keypress-visualizer-config.toml" cfg.settings;
+        };
+
+        security.wrappers.keypress-visualizer-rust = lib.mkIf cfg.useWrapper {
+          owner = "root";
+          group = "root";
+          capabilities = "cap_dac_override,cap_sys_ptrace+ep";
+          source = "${cfg.package}/bin/keypress-visualizer-rust";
+        };
+      };
+    };
+
     packages = forAllSystems (system: let
       pkgs = import nixpkgs {
         inherit system;
@@ -50,6 +99,9 @@
         postInstall = ''
           mkdir -p $out/share/keypress-visualizer-rust
           cp default_config.toml default_style.css $out/share/keypress-visualizer-rust/
+
+          mkdir -p $out/share/applications
+          cp keypress-visualizer.desktop $out/share/applications/
 
           wrapProgram $out/bin/keypress-visualizer-rust \
             --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeDeps}" \

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Keypress Visualizer
+Exec=keypress-visualizer-rust
+Icon=input-keyboard
+Terminal=false
+Type=Application
+Categories=Utility;
+Comment=A simple keypress overlay
