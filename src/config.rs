@@ -34,8 +34,14 @@ impl Default for AppearanceConfig {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
+    #[serde(default = "default_true")]
+    pub show_in_tray: bool,
     #[serde(default)]
     pub mappings: HashMap<String, String>,
     #[serde(default)]
@@ -53,6 +59,7 @@ pub fn load_config() -> Config {
             e
         );
         Config {
+            show_in_tray: true,
             mappings: HashMap::new(),
             appearance: AppearanceConfig::default(),
         }

@@ -8,10 +8,17 @@ use std::time::{Duration, Instant};
 
 use crate::config::{AppearanceConfig, Config, load_config};
 use crate::input;
+use crate::tray;
 use crate::utils::map_char_key;
 
 pub fn build_ui(app: &Application) {
     let config = load_config();
+
+    let (tx_quit, rx_quit) = std::sync::mpsc::channel::<()>();
+    if config.show_in_tray {
+        tray::spawn_tray(tx_quit);
+    }
+
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Keypress Visualizer")
@@ -34,7 +41,7 @@ pub fn build_ui(app: &Application) {
     let (tx, rx) = std::sync::mpsc::channel::<(String, i32)>();
     start_input_thread(tx);
 
-    setup_event_loop(rx, container, config);
+    setup_event_loop(rx, rx_quit, container, config, app.clone());
 }
 
 fn setup_layer_shell(window: &ApplicationWindow, appearance: &AppearanceConfig) {
@@ -167,12 +174,18 @@ impl AppState {
 
 fn setup_event_loop(
     rx: std::sync::mpsc::Receiver<(String, i32)>,
+    rx_quit: std::sync::mpsc::Receiver<()>,
     container: GtkBox,
     config: Config,
+    app: Application,
 ) {
     let state = Rc::new(RefCell::new(AppState::new(container, config)));
 
     glib::timeout_add_local(Duration::from_millis(10), move || {
+        if let Ok(()) = rx_quit.try_recv() {
+            app.quit();
+            return glib::ControlFlow::Break;
+        }
         while let Ok((key_name, value)) = rx.try_recv() {
             process_key_event(state.clone(), key_name, value);
         }

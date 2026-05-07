@@ -1,5 +1,6 @@
 mod config;
 mod input;
+mod tray;
 mod ui;
 mod utils;
 

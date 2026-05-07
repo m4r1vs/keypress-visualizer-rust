@@ -1,3 +1,5 @@
+show_in_tray = true
+
 [mappings]
 LEFTMETA = "⌘"
 RIGHTMETA = "⌘"
